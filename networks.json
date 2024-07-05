@@ -1,0 +1,8 @@
+{
+  "arbitrum-one": {
+    "L2ArbitrumGovernor": {
+      "address": "0x065620d99E1785Ccf56Fa95462d3012Eb844FDC9",
+      "startBlock": 70397655
+    }
+  }
+}
