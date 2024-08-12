@@ -34,6 +34,7 @@ type ProposalCanceled @entity(immutable: true) {
 
 type ProposalCreated @entity(immutable: true) {
   id: Bytes!
+  contractAddress : Bytes! #address[] 
   proposalId: BigInt! # uint256
   proposer: Bytes! # address
   targets: [Bytes!]! # address[]
