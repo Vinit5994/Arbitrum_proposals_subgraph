@@ -34,7 +34,6 @@ type ProposalCanceled @entity(immutable: true) {
 
 type ProposalCreated @entity(immutable: true) {
   id: Bytes!
-  contractAddress : Bytes! #address[] 
   proposalId: BigInt! # uint256
   proposer: Bytes! # address
   targets: [Bytes!]! # address[]
@@ -143,4 +142,22 @@ type VotingPeriodSet @entity(immutable: true) {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
+}
+
+type ProposalVoteSummary @entity {
+id: ID!
+proposalId: BigInt!
+votesFor: BigInt!
+votesAgainst: BigInt!
+votesAbstain: BigInt!
+totalVotes: BigInt!
+totalWeight: BigInt!
+lastUpdated: BigInt!
+proposal: ProposalCreated
+percentFor: BigDecimal
+percentAgainst: BigDecimal
+percentAbstain: BigDecimal
+weightFor: BigInt!
+weightAgainst: BigInt!
+weightAbstain: BigInt!
 }

@@ -31,9 +31,80 @@ import {
   VoteCast,
   VoteCastWithParams,
   VotingDelaySet,
-  VotingPeriodSet
+  VotingPeriodSet,
+  ProposalVoteSummary
 } from "../generated/schema"
+import {
+  BigInt,
+  BigDecimal,
+  store
+} from "@graphprotocol/graph-ts"
+// Utility constants
+const ZERO_BI = BigInt.fromI32(0)
+const ZERO_BD = BigDecimal.fromString("0")
+const ONE_BI = BigInt.fromI32(1)
 
+// Utility function to update/create ProposalVoteSummary
+function updateProposalVoteSummary(
+  proposalId: BigInt, 
+  support: i32, 
+  weight: BigInt,
+  timestamp: BigInt
+): void {
+  let summaryId = proposalId.toString()
+  let summary = ProposalVoteSummary.load(summaryId)
+  
+  // Create if not exists
+  if (!summary) {
+    summary = new ProposalVoteSummary(summaryId)
+    summary.proposalId = proposalId
+    summary.totalVotes = ZERO_BI
+    summary.totalWeight = ZERO_BI
+    summary.votesFor = ZERO_BI
+    summary.votesAgainst = ZERO_BI
+    summary.votesAbstain = ZERO_BI
+    summary.weightFor = ZERO_BI
+    summary.weightAgainst = ZERO_BI
+    summary.weightAbstain = ZERO_BI
+    
+    // // Optional: Link to original proposal
+    // let proposal = ProposalCreated.load(summaryId)
+    // if (proposal) {
+    //   summary.proposal = proposal.id
+    // }
+  }
+  
+  // Update counters based on support type
+  summary.totalVotes = summary.totalVotes.plus(ONE_BI)
+  summary.totalWeight = summary.totalWeight.plus(weight)
+  
+  if (support === 0) {  // Against
+    summary.votesAgainst = summary.votesAgainst.plus(ONE_BI)
+    summary.weightAgainst = summary.weightAgainst.plus(weight)
+  } else if (support === 1) {  // For
+    summary.votesFor = summary.votesFor.plus(ONE_BI)
+    summary.weightFor = summary.weightFor.plus(weight)
+  } else if (support === 2) {  // Abstain
+    summary.votesAbstain = summary.votesAbstain.plus(ONE_BI)
+    summary.weightAbstain = summary.weightAbstain.plus(weight)
+  }
+  
+  // Calculate percentages (optional)
+  summary.percentFor = summary.totalVotes.gt(ZERO_BI)
+    ? summary.votesFor.toBigDecimal().div(summary.totalVotes.toBigDecimal()).times(BigDecimal.fromString("100"))
+    : ZERO_BD
+  
+  summary.percentAgainst = summary.totalVotes.gt(ZERO_BI)
+    ? summary.votesAgainst.toBigDecimal().div(summary.totalVotes.toBigDecimal()).times(BigDecimal.fromString("100"))
+    : ZERO_BD
+  
+  summary.percentAbstain = summary.totalVotes.gt(ZERO_BI)
+    ? summary.votesAbstain.toBigDecimal().div(summary.totalVotes.toBigDecimal()).times(BigDecimal.fromString("100"))
+    : ZERO_BD
+  
+  summary.lastUpdated = timestamp
+  summary.save()
+}
 export function handleInitialized(event: InitializedEvent): void {
   let entity = new Initialized(
     event.transaction.hash.concatI32(event.logIndex.toI32())
@@ -215,6 +286,13 @@ export function handleVoteCast(event: VoteCastEvent): void {
   entity.transactionHash = event.transaction.hash
 
   entity.save()
+  // Update or Create ProposalVoteSummary
+  updateProposalVoteSummary(
+    event.params.proposalId, 
+    event.params.support, 
+    event.params.weight,
+    event.block.timestamp
+  )
 }
 
 export function handleVoteCastWithParams(event: VoteCastWithParamsEvent): void {
@@ -233,6 +311,13 @@ export function handleVoteCastWithParams(event: VoteCastWithParamsEvent): void {
   entity.transactionHash = event.transaction.hash
 
   entity.save()
+   // Update or Create ProposalVoteSummary
+   updateProposalVoteSummary(
+    event.params.proposalId, 
+    event.params.support, 
+    event.params.weight,
+    event.block.timestamp
+  )
 }
 
 export function handleVotingDelaySet(event: VotingDelaySetEvent): void {
