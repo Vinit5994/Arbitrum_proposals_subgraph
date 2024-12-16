@@ -143,10 +143,37 @@ type VotingPeriodSet @entity(immutable: true) {
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
+type VoterDetail @entity {
+id: ID!
+voter: Bytes!
+proposalId: BigInt!
+votingPower: BigInt!
+support: Int!
+timestamp: BigInt!
+}
+
+type ProposalDailyVoteSummary @entity {
+id: ID!
+proposalId: BigInt!
+day: BigInt!  # Timestamp of the start of the day
+dayString: String!  # Human-readable date for easier querying
+votesFor: BigInt!
+votesAgainst: BigInt!
+votesAbstain: BigInt!
+totalVotes: BigInt!
+totalWeight: BigInt!
+weightFor: BigInt!
+weightAgainst: BigInt!
+weightAbstain: BigInt!
+percentFor: BigDecimal
+percentAgainst: BigDecimal
+percentAbstain: BigDecimal
+proposal: ProposalCreated
+}
 
 type ProposalVoteSummary @entity {
 id: ID!
-proposalId: BigInt!
+proposalId: BigInt! # uint256
 votesFor: BigInt!
 votesAgainst: BigInt!
 votesAbstain: BigInt!
@@ -160,4 +187,6 @@ percentAbstain: BigDecimal
 weightFor: BigInt!
 weightAgainst: BigInt!
 weightAbstain: BigInt!
+voterDetails: [VoterDetail!]!
+dailySummaries: [ProposalDailyVoteSummary!]
 }

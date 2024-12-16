@@ -32,23 +32,102 @@ import {
   VoteCastWithParams,
   VotingDelaySet,
   VotingPeriodSet,
-  ProposalVoteSummary
+  ProposalVoteSummary,
+  VoterDetail,
+  ProposalDailyVoteSummary
 } from "../generated/schema"
 import {
   BigInt,
   BigDecimal,
-  store
+  store,
+  log
 } from "@graphprotocol/graph-ts"
 // Utility constants
 const ZERO_BI = BigInt.fromI32(0)
 const ZERO_BD = BigDecimal.fromString("0")
 const ONE_BI = BigInt.fromI32(1)
+const SECONDS_PER_DAY = BigInt.fromI32(86400)
+// Utility function to get start of day timestamp
+function getStartOfDay(timestamp: BigInt): BigInt {
+  return timestamp.div(SECONDS_PER_DAY).times(SECONDS_PER_DAY)
+}
 
+// Utility function to format date as YYYY-MM-DD
+function formatDate(timestamp: BigInt): string {
+  let date = new Date(timestamp.toI64() * 1000)
+  return date.toISOString().split('T')[0]
+}
+
+function updateProposalDailyVoteSummary(
+  proposalId: BigInt, 
+  support: i32, 
+  weight: BigInt,
+  timestamp: BigInt
+): void {
+  let dayStart = getStartOfDay(timestamp)
+  let summaryId = proposalId.toString() + "-" + dayStart.toString()
+  
+  let dailySummary = ProposalDailyVoteSummary.load(summaryId)
+  
+  // Create if not exists
+  if (!dailySummary) {
+    dailySummary = new ProposalDailyVoteSummary(summaryId)
+    dailySummary.proposalId = proposalId
+    dailySummary.day = dayStart
+    dailySummary.dayString = formatDate(timestamp)
+    dailySummary.votesFor = ZERO_BI
+    dailySummary.votesAgainst = ZERO_BI
+    dailySummary.votesAbstain = ZERO_BI
+    dailySummary.totalVotes = ZERO_BI
+    dailySummary.totalWeight = ZERO_BI
+    dailySummary.weightFor = ZERO_BI
+    dailySummary.weightAgainst = ZERO_BI
+    dailySummary.weightAbstain = ZERO_BI
+    
+    // Link to original proposal
+    let proposal = ProposalCreated.load(Bytes.fromByteArray(Bytes.fromBigInt(proposalId)));
+    if (proposal) {
+      log.info('Proposal found for proposalId: {}', [proposalId.toString()])
+      dailySummary.proposal = proposal.id
+    }
+  }
+  
+  // Update counters based on support type
+  dailySummary.totalVotes = dailySummary.totalVotes.plus(ONE_BI)
+  dailySummary.totalWeight = dailySummary.totalWeight.plus(weight)
+  
+  if (support === 0) {  // Against
+    dailySummary.votesAgainst = dailySummary.votesAgainst.plus(ONE_BI)
+    dailySummary.weightAgainst = dailySummary.weightAgainst.plus(weight)
+  } else if (support === 1) {  // For
+    dailySummary.votesFor = dailySummary.votesFor.plus(ONE_BI)
+    dailySummary.weightFor = dailySummary.weightFor.plus(weight)
+  } else if (support === 2) {  // Abstain
+    dailySummary.votesAbstain = dailySummary.votesAbstain.plus(ONE_BI)
+    dailySummary.weightAbstain = dailySummary.weightAbstain.plus(weight)
+  }
+  
+  // Calculate percentages
+  dailySummary.percentFor = dailySummary.totalVotes.gt(ZERO_BI)
+    ? dailySummary.votesFor.toBigDecimal().div(dailySummary.totalVotes.toBigDecimal()).times(BigDecimal.fromString("100"))
+    : ZERO_BD
+  
+  dailySummary.percentAgainst = dailySummary.totalVotes.gt(ZERO_BI)
+    ? dailySummary.votesAgainst.toBigDecimal().div(dailySummary.totalVotes.toBigDecimal()).times(BigDecimal.fromString("100"))
+    : ZERO_BD
+  
+  dailySummary.percentAbstain = dailySummary.totalVotes.gt(ZERO_BI)
+    ? dailySummary.votesAbstain.toBigDecimal().div(dailySummary.totalVotes.toBigDecimal()).times(BigDecimal.fromString("100"))
+    : ZERO_BD
+  
+  dailySummary.save()
+}
 // Utility function to update/create ProposalVoteSummary
 function updateProposalVoteSummary(
   proposalId: BigInt, 
   support: i32, 
   weight: BigInt,
+  voter: Bytes,
   timestamp: BigInt
 ): void {
   let summaryId = proposalId.toString()
@@ -66,14 +145,38 @@ function updateProposalVoteSummary(
     summary.weightFor = ZERO_BI
     summary.weightAgainst = ZERO_BI
     summary.weightAbstain = ZERO_BI
-    
+    summary.voterDetails = []
+    summary.dailySummaries = []; // Initialize with an empty array
+
+    // summary.votingPeriodBreakdown = []
     // // Optional: Link to original proposal
     // let proposal = ProposalCreated.load(summaryId)
     // if (proposal) {
     //   summary.proposal = proposal.id
     // }
   }
-  
+   // Add Voter Details
+   let voterDetailId = `${summaryId}-${voter.toHexString()}-${timestamp.toString()}`
+   let voterDetail = new VoterDetail(voterDetailId)
+   voterDetail.voter = voter
+   voterDetail.proposalId = proposalId
+   voterDetail.votingPower = weight
+   voterDetail.support = support
+   voterDetail.timestamp = timestamp
+   voterDetail.save()
+   
+   // Update summary's voter details
+   let voterDetails = summary.voterDetails
+   voterDetails.push(voterDetailId)
+   summary.voterDetails = voterDetails
+
+   // Update Voting Period Breakdown
+  // updateVotingPeriodBreakdown(
+  //   proposalId, 
+  //   support, 
+  //   weight, 
+  //   timestamp
+  // )
   // Update counters based on support type
   summary.totalVotes = summary.totalVotes.plus(ONE_BI)
   summary.totalWeight = summary.totalWeight.plus(weight)
@@ -105,6 +208,54 @@ function updateProposalVoteSummary(
   summary.lastUpdated = timestamp
   summary.save()
 }
+// Function to track voting breakdown by 24-hour periods
+// function updateVotingPeriodBreakdown(
+//   proposalId: BigInt, 
+//   support: i32, 
+//   weight: BigInt,
+//   timestamp: BigInt
+// ): void {
+//   // Calculate voting periods (24-hour intervals)
+//   let proposal = ProposalCreated.load(Bytes.fromBigInt(proposalId))
+//   if (!proposal)
+//     {
+//       log.warning('No ProposalCreateds found for proposalId: {}', [proposalId.toString()])
+//       return
+//     } 
+
+//   let proposalStartTime = proposal.blockTimestamp
+//   let periodIndex = timestamp.minus(proposalStartTime).div(DAY_IN_SECONDS)
+//   let periodId = `${proposalId.toString()}-${periodIndex.toString()}`
+//   let periodBreakdown = VotingPeriodCount.load(periodId)
+  
+//   if (!periodBreakdown) {
+//     periodBreakdown = new VotingPeriodCount(periodId)
+//     periodBreakdown.proposalId = proposalId
+//     periodBreakdown.periodStartTimestamp = proposalStartTime.plus(periodIndex.times(DAY_IN_SECONDS))
+//     periodBreakdown.periodEndTimestamp = proposalStartTime.plus(periodIndex.plus(ONE_BI).times(DAY_IN_SECONDS))
+//     periodBreakdown.votesFor = ZERO_BI
+//     periodBreakdown.votesAgainst = ZERO_BI
+//     periodBreakdown.votesAbstain = ZERO_BI
+//     periodBreakdown.totalVotes = ZERO_BI
+//     periodBreakdown.totalWeight = ZERO_BI
+//   }
+  
+//   // Update period breakdown
+//   periodBreakdown.totalVotes = periodBreakdown.totalVotes.plus(ONE_BI)
+//   periodBreakdown.totalWeight = periodBreakdown.totalWeight.plus(weight)
+  
+//   if (support === 0) {  // Against
+//     periodBreakdown.votesAgainst = periodBreakdown.votesAgainst.plus(ONE_BI)
+//   } else if (support === 1) {  // For
+//     periodBreakdown.votesFor = periodBreakdown.votesFor.plus(ONE_BI)
+//   } else if (support === 2) {  // Abstain
+//     periodBreakdown.votesAbstain = periodBreakdown.votesAbstain.plus(ONE_BI)
+//   }
+  
+//   periodBreakdown.save()
+// }
+
+
 export function handleInitialized(event: InitializedEvent): void {
   let entity = new Initialized(
     event.transaction.hash.concatI32(event.logIndex.toI32())
@@ -286,13 +437,29 @@ export function handleVoteCast(event: VoteCastEvent): void {
   entity.transactionHash = event.transaction.hash
 
   entity.save()
-  // Update or Create ProposalVoteSummary
+
+  // let proposal = ProposalCreated.load(
+  //   Bytes.fromByteArray(Bytes.fromBigInt(event.params.proposalId))
+  // )
+  // // Update or Create ProposalVoteSummary
+  // if (proposal) {
+
+    
   updateProposalVoteSummary(
+    event.params.proposalId, 
+    event.params.support, 
+    event.params.weight,
+    event.params.voter,
+    event.block.timestamp
+  )
+  updateProposalDailyVoteSummary(
     event.params.proposalId, 
     event.params.support, 
     event.params.weight,
     event.block.timestamp
   )
+
+// }
 }
 
 export function handleVoteCastWithParams(event: VoteCastWithParamsEvent): void {
@@ -311,13 +478,25 @@ export function handleVoteCastWithParams(event: VoteCastWithParamsEvent): void {
   entity.transactionHash = event.transaction.hash
 
   entity.save()
-   // Update or Create ProposalVoteSummary
-   updateProposalVoteSummary(
+//   let proposal = ProposalCreated.load(
+//     Bytes.fromByteArray(Bytes.fromBigInt(event.params.proposalId))
+//   )  // Update or Create ProposalVoteSummary
+// if(proposal) {
+  updateProposalVoteSummary(
+    event.params.proposalId, 
+    event.params.support, 
+    event.params.weight,
+    event.params.voter,
+    event.block.timestamp
+  )
+  updateProposalDailyVoteSummary(
     event.params.proposalId, 
     event.params.support, 
     event.params.weight,
     event.block.timestamp
   )
+
+// }
 }
 
 export function handleVotingDelaySet(event: VotingDelaySetEvent): void {
