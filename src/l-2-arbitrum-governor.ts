@@ -128,7 +128,8 @@ function updateProposalVoteSummary(
   support: i32, 
   weight: BigInt,
   voter: Bytes,
-  timestamp: BigInt
+  timestamp: BigInt,
+  transactionHash: Bytes  // Add new parameter
 ): void {
   let summaryId = proposalId.toString()
   let summary = ProposalVoteSummary.load(summaryId)
@@ -163,6 +164,7 @@ function updateProposalVoteSummary(
    voterDetail.votingPower = weight
    voterDetail.support = support
    voterDetail.timestamp = timestamp
+  voterDetail.transactionHash = transactionHash
    voterDetail.save()
    
    // Update summary's voter details
@@ -450,7 +452,8 @@ export function handleVoteCast(event: VoteCastEvent): void {
     event.params.support, 
     event.params.weight,
     event.params.voter,
-    event.block.timestamp
+    event.block.timestamp,
+    event.transaction.hash
   )
   updateProposalDailyVoteSummary(
     event.params.proposalId, 
@@ -487,7 +490,8 @@ export function handleVoteCastWithParams(event: VoteCastWithParamsEvent): void {
     event.params.support, 
     event.params.weight,
     event.params.voter,
-    event.block.timestamp
+    event.block.timestamp,
+    event.transaction.hash
   )
   updateProposalDailyVoteSummary(
     event.params.proposalId, 

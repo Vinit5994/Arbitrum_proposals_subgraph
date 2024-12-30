@@ -150,6 +150,7 @@ proposalId: BigInt!
 votingPower: BigInt!
 support: Int!
 timestamp: BigInt!
+transactionHash: Bytes!  # Add this line
 }
 
 type ProposalDailyVoteSummary @entity {
